@@ -2,40 +2,59 @@
 
 A .NET solution for a URL Shortener application built with a layered (Clean) architecture.
 
-> **Last Updated:** 2026-09-29
+> **Last Updated:** 2026-10-01
 
 ---
 
 ## 📌 Current Status
 
-**Phase:** _Setup / Core / Infrastructure / API / Testing / Deployment_
-**Progress:** `[███░░░░░░░] 30%`
+**Phase:** Core / Infrastructure / API
+**Progress:** `[████░░░░░░] 40%`
 
 ### ✅ Done
 - Created solution and all projects
-- Added project references
+- Added project references between layers
+- Added NuGet packages (EF Core, Npgsql, Serilog, Swashbuckle)
+- Defined domain entities: `User`, `Link`, `Click`
+- Configured `AppDbContext` with relationships and indexes
+- Wired EF Core + Serilog into `Program.cs`
+- Stored Neon connection string via User Secrets
+- Generated and applied `InitialCreate` migration to Neon
+- Enabled Swagger UI at `/swagger`
 
 ### 🚧 In Progress
-- Adding NuGet packages to Infrastructure layer
+- Building API endpoints (starting with `POST /api/links`)
 
 ### 📝 Next Up
-- Create Neon Connection String
-- Wire AddDbContext into Program.cs
-- Run first migration -EF generates C# code describing schema
-- Apply it to neon - see actual tables appear in dashboard
+- Day 4: Create `LinksController` with `POST /api/links`
+- Short code generator (base62, 7 chars)
+- Test endpoint via Swagger, verify rows in Neon
 
 ---
 
 ## 🗓️ Daily Log
 
-### 2026-09-29
+### 2026-10-01 (Day 3)
+- Installed `Swashbuckle.AspNetCore` for Swagger UI
+- Stored Neon connection string in User Secrets (not in repo)
+- Wired `AddDbContext<AppDbContext>` with `UseNpgsql` in `Program.cs`
+- Configured Serilog via `appsettings.json`
+- Generated migration: `dotnet ef migrations add InitialCreate`
+- Applied migration to Neon: `dotnet ef database update`
+- Verified `Users`, `Links`, `Clicks`, `__EFMigrationsHistory` tables in Neon
+- Confirmed Swagger UI loads (no endpoints yet — expected)
+- Added `.gitignore` for .NET projects
+
+### 2026-09-29 (Day 2)
+- Created domain entities: `User`, `Link`, `Click`
+- Created `AppDbContext` with `OnModelCreating` configuration
+- Configured relationships, unique indexes, cascade deletes
+
+### 2026-09-28 (Day 1)
 - Created solution: `dotnet new sln -n UrlShortener`
 - Created 4 projects: Api, Core, Infrastructure, Tests
 - Added project references between layers
-- Started adding NuGet packages
-
-### 2026-09-28
-- Planned architecture and folder structure
+- Added initial NuGet packages
 
 <!-- Add new entries at the top, newest first -->
 
@@ -47,47 +66,42 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 |---|---|---|
 | `UrlShortener.Api` | Web API | HTTP endpoints, DI setup |
 | `UrlShortener.Core` | Class Library | Domain entities, interfaces |
-| `UrlShortener.Infrastructure` | Class Library | EF Core, repositories, external services |
+| `UrlShortener.Infrastructure` | Class Library | EF Core, DbContext, migrations |
 | `UrlShortener.Tests` | xUnit | Unit & integration tests |
 
----
-Architecture
-
+### Architecture
 UrlShortener.API-->Infrastructure-->Core
 
-   Tests ──► Api + Infrastructure
-   
-## 🚀 Setup Commands
+Tests ──► Api + Infrastructure
 
-<details>
-<summary>Click to expand the initial setup steps</summary>
 
-### 1. Solution & Projects
+**Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`. This keeps the domain clean.
+
+---
+
+## 🗄️ Data Model
+
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `Users` | Registered users | `Id`, `Email` (unique), `PasswordHash` |
+| `Links` | Shortened URLs | `Id`, `UserId` (FK), `ShortCode` (unique), `OriginalUrl` |
+| `Clicks` | Click tracking | `Id` (long), `LinkId` (FK), `ClickedAt`, `UserAgent`, `Referrer`, `IpHash` |
+
+**Relationships:**
+- One `User` → many `Links` (cascade delete)
+- One `Link` → many `Clicks` (cascade delete)
+
+---
+
+## 🚀 Setup
+
+### Prerequisites
+- .NET 10 SDK
+- A Neon account (free tier) for PostgreSQL
+
+### 1. Clone & Restore
+
 ```bash
-dotnet new sln -n UrlShortener
-dotnet new webapi -n UrlShortener.Api
-dotnet new classlib -n UrlShortener.Core
-dotnet new classlib -n UrlShortener.Infrastructure
-dotnet new xunit -n UrlShortener.Tests
-dotnet sln add UrlShortener.Api UrlShortener.Core UrlShortener.Infrastructure UrlShortener.Tests
-
-Project References
-dotnet add UrlShortener.Api reference UrlShortener.Core
-dotnet add UrlShortener.Api reference UrlShortener.Infrastructure
-dotnet add UrlShortener.Infrastructure reference UrlShortener.Core
-dotnet add UrlShortener.Tests reference UrlShortener.Api
-dotnet add UrlShortener.Tests reference UrlShortener.Infrastructure
-
-Nuget Packages
-dotnet add UrlShortener.Infrastructure package Microsoft.EntityFrameworkCore
-dotnet add UrlShortener.Infrastructure package Microsoft.EntityFrameworkCore.SqlServer
-dotnet add UrlShortener.Infrastructure package Microsoft.EntityFrameworkCore.Tools
-#add more as needed
-
-How to Run
+git clone <repo-url>
+cd UrlShortener
 dotnet restore
-dotnet build
-dotnet run --project UrlShortener.Api
-
-How to Test
-dotnet test
