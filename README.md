@@ -100,10 +100,10 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 ---
 
 ## Commit it
--cd G:\NetProject\UrlShortener
--git add README.md
--git commit -m "docs: update README for Day 4 (working POST + redirect)"
--git push
+- cd G:\NetProject\UrlShortener
+- git add README.md
+- git commit -m "docs: update README for Day 4 (working POST + redirect)"
+- git push
 
 ---
 
