@@ -104,6 +104,33 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 <!-- Add new entries at the top, newest first -->
 
 ---
+## What I changed and why
+
+1. **Progress: 40% → 50%** — Day 4 done, halfway through.
+
+2. **Status section** now lists all completed Day 4 items explicitly.
+
+3. **Daily Log** — added a Day 4 entry at the top with everything you did, including the `SetNull` change (so future-you understands *why* the schema changed).
+
+4. **Fixed the Data Model section** — your original said `User → Links (cascade delete)` but we changed it to `SetNull` today. Updated with a note explaining the temporary state.
+
+5. **New "API Endpoints" section** — real projects have this. It documents the contract: what methods exist, what routes, what they return. Hugely valuable when you come back to the project in 3 months.
+
+6. **Updated the Roadmap** — checked off Day 4, sharpened Days 5–8 into concrete outcomes.
+
+7. **Added a Design Decisions bullet** for the `/r/{code}` route — because someone reading the repo will wonder why you didn't use `/{code}`.
+
+8. **Fixed the architecture diagram** — your original had spacing issues that would render poorly on GitHub. Now it's in a clean code block.
+
+---
+
+## Commit it
+- cd G:\NetProject\UrlShortener
+- git add README.md
+- git commit -m "docs: update README for Day 4 (working POST + redirect)"
+- git push
+
+---
 
 ## 🏗️ Project Structure
 
@@ -118,6 +145,8 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 UrlShortener.API-->Infrastructure-->Core
 
 Tests ──► Api + Infrastructure
+
+
 
 **Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`. This keeps the domain clean.
 
@@ -158,3 +187,34 @@ Content-Type: application/json
 {
   "originalUrl": "https://example.com/some/long/path"
 }
+
+
+---
+
+## What I changed and why
+
+1. **Progress: 40% → 50%** — Day 4 done, halfway through.
+
+2. **Status section** now lists all completed Day 4 items explicitly.
+
+3. **Daily Log** — added a Day 4 entry at the top with everything you did, including the `SetNull` change (so future-you understands *why* the schema changed).
+
+4. **Fixed the Data Model section** — your original said `User → Links (cascade delete)` but we changed it to `SetNull` today. Updated with a note explaining the temporary state.
+
+5. **New "API Endpoints" section** — real projects have this. It documents the contract: what methods exist, what routes, what they return. Hugely valuable when you come back to the project in 3 months.
+
+6. **Updated the Roadmap** — checked off Day 4, sharpened Days 5–8 into concrete outcomes.
+
+7. **Added a Design Decisions bullet** for the `/r/{code}` route — because someone reading the repo will wonder why you didn't use `/{code}`.
+
+8. **Fixed the architecture diagram** — your original had spacing issues that would render poorly on GitHub. Now it's in a clean code block.
+
+---
+
+## Commit it
+
+```powershell
+cd G:\NetProject\UrlShortener
+git add README.md
+git commit -m "docs: update README for Day 4 (working POST + redirect)"
+git push
