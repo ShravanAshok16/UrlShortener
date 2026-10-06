@@ -2,14 +2,14 @@
 
 A .NET solution for a URL Shortener application built with a layered (Clean) architecture.
 
-> **Last Updated:** 2026-10-05
+> **Last Updated:** 2026-10-06
 
 ---
 
 ## 📌 Current Status
 
-**Phase:** API endpoints — CRUD complete
-**Progress:** `[██████░░░░] 60%`
+**Phase:** Authentication — Part 1 of 2 complete
+**Progress:** `[███████░░░] 70%`
 
 ### ✅ Done
 - Created solution and all projects
@@ -29,24 +29,49 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - DTOs: `CreateLinkRequest`, `CreateLinkResponse`, `LinkListItemResponse`, `PagedResponse<T>`
 - Click tracking: `Click` row inserted on every redirect
 - Hashed IP storage (SHA256) — no raw IPs in the DB
+- **`POST /api/Auth/register`** — register a new user, returns JWT
+- **`POST /api/Auth/login`** — validate credentials, returns JWT
+- `TokenService` — issues signed JWT tokens (HS256, 30-min lifetime)
+- `AuthResponse`, `RegisterRequest`, `LoginRequest` DTOs
+- BCrypt password hashing (`BCrypt.Net-Next`)
+- JWT bearer authentication wired into `Program.cs`
+- Swagger UI configured with JWT Authorization button
 - Made `Link.UserId` nullable temporarily (auth doesn't exist yet)
 
 ### 🚧 In Progress
-- Preparing for authentication (Day 6)
+- Day 6 Part 2: locking down `LinksController` with `[Authorize]` and ownership rules
 
-### 📝 Next Up (Day 6)
-- Install BCrypt for password hashing
-- Add `AuthController` with register + login endpoints
-- Issue JWTs on login
-- Wire JWT bearer authentication into `Program.cs`
-- Add `[Authorize]` to `POST /api/Links` and `GET /api/Links`
-- Update `CreateLink` to store the owner's `UserId` from the token
+### 📝 Next Up (Day 6 Part 2)
 - Flip `Link.UserId` back to required (`Guid`) and delete behavior back to `Cascade`
 - Add migration for the schema change
+- Add `[Authorize]` at the class level on `LinksController`
+- Add `[AllowAnonymous]` on the redirect endpoint
+- Update `CreateLink` to set `UserId` from the JWT
+- Update `GetLinks` to filter by `UserId`
+- Update `DeleteLink` to check ownership
+- Full flow test: register → login → create → list → delete
+- Negative tests: 401 without token, 404 for other users' links
 
 ---
 
 ## 🗓️ Daily Log
+
+### 2026-10-06 (Day 6, Part 1)
+- Installed `BCrypt.Net-Next` (Infrastructure), `Microsoft.AspNetCore.Authentication.JwtBearer` and `System.IdentityModel.Tokens.Jwt` (Api)
+- Added `Jwt` section to `appsettings.json` (Issuer, Audience, placeholder Key)
+- Stored real `Jwt:Key` in User Secrets (never in repo)
+- Created `UrlShortener.Api/Services/TokenService.cs` — issues HS256-signed JWTs with 30-min lifetime
+- Created DTOs: `RegisterRequest`, `LoginRequest`, `AuthResponse`
+- Created `AuthController` with:
+  - `POST /api/Auth/register` — checks for duplicate email, hashes password with BCrypt, returns JWT
+  - `POST /api/Auth/login` — validates credentials with `BCrypt.Verify`, returns JWT
+- Wired JWT bearer auth in `Program.cs`:
+  - `AddAuthentication().AddJwtBearer(...)` with full `TokenValidationParameters`
+  - `AddAuthorization()` registered
+  - `UseAuthentication()` before `UseAuthorization()` — order critical
+- Added Swagger security definition so the **Authorize** button appears
+- Resolved `Microsoft.OpenApi` v2.x namespace changes (`OpenApiSecuritySchemeReference` vs `OpenApiSecurityScheme.Reference`)
+- Verified register and login work via Swagger; users appear in Neon's `Users` table with BCrypt-hashed passwords
 
 ### 2026-10-05 (Day 5)
 - Added DTOs: `LinkListItemResponse`, `PagedResponse<T>`
@@ -74,7 +99,7 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - Added `AppSettings:BaseUrl` to `appsettings.json`
 - Made `Link.UserId` nullable and switched User→Link delete behavior from `Cascade` to `SetNull`
   - Reason: auth doesn't exist yet, so newly created links have no owner
-  - Will flip back to `Cascade` when JWT auth lands (Day 6)
+  - Will flip back to `Cascade` when JWT auth lands (Day 6 Part 2)
 - Added migration: `MakeLinkUserIdNullable`
 - Verified end-to-end: POST → 201 Created → row visible in Neon's `Links` table
 - Verified redirect: browser visit to `/{code}` → 302 to original URL
@@ -104,39 +129,12 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 <!-- Add new entries at the top, newest first -->
 
 ---
-## What I changed and why
-
-1. **Progress: 40% → 50%** — Day 4 done, halfway through.
-
-2. **Status section** now lists all completed Day 4 items explicitly.
-
-3. **Daily Log** — added a Day 4 entry at the top with everything you did, including the `SetNull` change (so future-you understands *why* the schema changed).
-
-4. **Fixed the Data Model section** — your original said `User → Links (cascade delete)` but we changed it to `SetNull` today. Updated with a note explaining the temporary state.
-
-5. **New "API Endpoints" section** — real projects have this. It documents the contract: what methods exist, what routes, what they return. Hugely valuable when you come back to the project in 3 months.
-
-6. **Updated the Roadmap** — checked off Day 4, sharpened Days 5–8 into concrete outcomes.
-
-7. **Added a Design Decisions bullet** for the `/r/{code}` route — because someone reading the repo will wonder why you didn't use `/{code}`.
-
-8. **Fixed the architecture diagram** — your original had spacing issues that would render poorly on GitHub. Now it's in a clean code block.
-
----
-
-## Commit it
-- cd G:\NetProject\UrlShortener
-- git add README.md
-- git commit -m "docs: update README for Day 4 (working POST + redirect)"
-- git push
-
----
 
 ## 🏗️ Project Structure
 
 | Project | Type | Purpose |
 |---|---|---|
-| `UrlShortener.Api` | Web API | HTTP endpoints, DI setup, controllers, DTOs |
+| `UrlShortener.Api` | Web API | HTTP endpoints, DI setup, controllers, DTOs, `TokenService` |
 | `UrlShortener.Core` | Class Library | Domain entities, services (`ShortCodeGenerator`) |
 | `UrlShortener.Infrastructure` | Class Library | EF Core, `AppDbContext`, migrations |
 | `UrlShortener.Tests` | xUnit | Unit & integration tests |
@@ -146,8 +144,6 @@ UrlShortener.API-->Infrastructure-->Core
 
 Tests ──► Api + Infrastructure
 
-
-
 **Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`. This keeps the domain clean.
 
 ---
@@ -156,65 +152,46 @@ Tests ──► Api + Infrastructure
 
 | Table | Purpose | Key Columns |
 |---|---|---|
-| `Users` | Registered users | `Id`, `Email` (unique), `PasswordHash`, `CreatedAt` |
+| `Users` | Registered users | `Id`, `Email` (unique), `PasswordHash` (BCrypt), `CreatedAt` |
 | `Links` | Shortened URLs | `Id`, `UserId` (FK, nullable — see note), `ShortCode` (unique), `OriginalUrl`, `IsActive` |
 | `Clicks` | Click tracking | `Id` (long), `LinkId` (FK), `ClickedAt`, `UserAgent`, `Referrer`, `IpHash` |
 
 **Relationships:**
-- One `User` → many `Links` (`SetNull` on delete — temporary until auth lands)
+- One `User` → many `Links` (`SetNull` on delete — temporary until Day 6 Part 2)
 - One `Link` → many `Clicks` (`Cascade` on delete)
 
-> **Note on `Link.UserId`:** Currently nullable because there's no auth system yet. Anonymous links have `UserId = NULL`. This will flip back to required (`Guid`, cascade delete) once JWT auth is implemented on Day 6.
+> **Note on `Link.UserId`:** Currently nullable because ownership rules haven't been enforced yet. Anonymous links have `UserId = NULL`. This will flip back to required (`Guid`, cascade delete) in Day 6 Part 2.
 
 ---
 
 ## 🔌 API Endpoints
 
+### Auth
+
 | Method | Route | Purpose |
 |---|---|---|
-| `POST` | `/api/Links` | Create a short link from a URL |
-| `GET` | `/api/Links?page=1&pageSize=20` | List links with click counts (paginated) |
-| `GET` | `/{code}` | Redirect to the original URL (with click tracking) |
-| `DELETE` | `/api/Links/{id}` | Soft-delete a link (sets `IsActive = false`) |
+| `POST` | `/api/Auth/register` | Register a new user, return JWT |
+| `POST` | `/api/Auth/login` | Validate credentials, return JWT |
 
-### Example: Create a short link
+### Links
+
+| Method | Route | Purpose | Auth |
+|---|---|---|---|
+| `POST` | `/api/Links` | Create a short link | Public (for now) |
+| `GET` | `/api/Links?page=1&pageSize=20` | List links with click counts | Public (for now) |
+| `GET` | `/{code}` | Redirect to the original URL | Public (always) |
+| `DELETE` | `/api/Links/{id}` | Soft-delete a link | Public (for now) |
+
+> **Note:** Auth enforcement on Links endpoints arrives in Day 6 Part 2.
+
+### Example: Register
 
 **Request:**
 ```http
-POST /api/Links
+POST /api/Auth/register
 Content-Type: application/json
 
 {
-  "originalUrl": "https://example.com/some/long/path"
+  "email": "test@example.com",
+  "password": "Password123!"
 }
-
-
----
-
-## What I changed and why
-
-1. **Progress: 40% → 50%** — Day 4 done, halfway through.
-
-2. **Status section** now lists all completed Day 4 items explicitly.
-
-3. **Daily Log** — added a Day 4 entry at the top with everything you did, including the `SetNull` change (so future-you understands *why* the schema changed).
-
-4. **Fixed the Data Model section** — your original said `User → Links (cascade delete)` but we changed it to `SetNull` today. Updated with a note explaining the temporary state.
-
-5. **New "API Endpoints" section** — real projects have this. It documents the contract: what methods exist, what routes, what they return. Hugely valuable when you come back to the project in 3 months.
-
-6. **Updated the Roadmap** — checked off Day 4, sharpened Days 5–8 into concrete outcomes.
-
-7. **Added a Design Decisions bullet** for the `/r/{code}` route — because someone reading the repo will wonder why you didn't use `/{code}`.
-
-8. **Fixed the architecture diagram** — your original had spacing issues that would render poorly on GitHub. Now it's in a clean code block.
-
----
-
-## Commit it
-
-```powershell
-cd G:\NetProject\UrlShortener
-git add README.md
-git commit -m "docs: update README for Day 4 (working POST + redirect)"
-git push
