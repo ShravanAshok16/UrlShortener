@@ -35,8 +35,7 @@ namespace UrlShortener.Infrastructure.Data;
                 e.HasOne(l => l.User)
                     .WithMany(u => u.Links)
                     .HasForeignKey(l => l.UserId)
-                    .IsRequired(false)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Click>(e=>

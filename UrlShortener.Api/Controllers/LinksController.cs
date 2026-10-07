@@ -4,11 +4,13 @@ using UrlShortener.Api.Models;
 using UrlShortener.Core.Entities;
 using UrlShortener.Core.Services;
 using UrlShortener.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
 
 namespace UrlShortener.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]                    // <-- every endpoint requires a token by default
     public class LinksController : ControllerBase
     {
         private readonly AppDbContext _dbContext;
@@ -21,12 +23,15 @@ namespace UrlShortener.Api.Controllers
         }
 
         [HttpPost]
+        [HttpPost]
         public async Task<ActionResult<CreateLinkResponse>> CreateLink([FromBody] CreateLinkRequest request)
         {
+            var userId = GetCurrentUserId();
             var baseUrl = _config["AppSettings:BaseUrl"] ?? "http://localhost:5029";
 
             var link = new Link
             {
+                UserId = userId,                                        // <-- owner
                 OriginalUrl = request.OriginalUrl,
                 ShortCode = ShortCodeGenerator.Generate(),
                 CreatedAt = DateTime.UtcNow,
@@ -47,17 +52,20 @@ namespace UrlShortener.Api.Controllers
         }
 
         [HttpGet]
+        [HttpGet]
         public async Task<ActionResult<PagedResponse<LinkListItemResponse>>> GetLinks(
-    [FromQuery] int page = 1,
-    [FromQuery] int pageSize = 20)
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
+            var userId = GetCurrentUserId();
             var baseUrl = _config["AppSettings:BaseUrl"] ?? "http://localhost:5029";
 
             var query = _dbContext.Links
                 .AsNoTracking()
+                .Where(l => l.UserId == userId)              // <-- filter by owner
                 .OrderByDescending(l => l.CreatedAt);
 
             var totalCount = await query.CountAsync();
@@ -86,6 +94,7 @@ namespace UrlShortener.Api.Controllers
             });
         }
 
+        [AllowAnonymous]
         [HttpGet("/{code}")]
         public async Task<IActionResult> RedirectToUrl(string code)
         {
@@ -127,15 +136,30 @@ namespace UrlShortener.Api.Controllers
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteLink(Guid id)
         {
+            var userId = GetCurrentUserId();
             var link = await _dbContext.Links.FindAsync(id);
 
             if (link is null)
                 return NotFound();
 
+            if (link.UserId != userId)
+                return NotFound();                            // 404, not 403 — don't leak existence
+
             link.IsActive = false;
             await _dbContext.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            var sub = User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                   ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(sub))
+                throw new UnauthorizedAccessException("User identity not found in token.");
+
+            return Guid.Parse(sub);
         }
     }
 }

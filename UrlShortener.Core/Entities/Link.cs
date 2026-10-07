@@ -9,7 +9,7 @@ namespace UrlShortener.Core.Entities
     {
         public Guid Id { get; set; } = Guid.NewGuid();
         // Foreign key for the user who created the link
-        public Guid? UserId { get; set; }
+        public Guid UserId { get; set; }
         // The original URL that is being shortened
         public string OriginalUrl { get; set; } = string.Empty;
         public string ShortCode { get; set; } = string.Empty;
@@ -18,10 +18,9 @@ namespace UrlShortener.Core.Entities
         public bool IsActive { get; set; } = true;
 
         // Navigation property for the user who created the link
-        public User? User { get; set; }
+        public User User { get; set; } = null!;
         // Navigation property for the clicks associated with the link
         public ICollection<Click> Clicks { get; set; } = new List<Click>();
-
 
     }
 }

@@ -2,14 +2,14 @@
 
 A .NET solution for a URL Shortener application built with a layered (Clean) architecture.
 
-> **Last Updated:** 2026-10-06
+> **Last Updated:** 2026-10-07
 
 ---
 
 ## 📌 Current Status
 
-**Phase:** Authentication — Part 1 of 2 complete
-**Progress:** `[███████░░░] 70%`
+**Phase:** Authentication complete
+**Progress:** `[████████░░] 80%`
 
 ### ✅ Done
 - Created solution and all projects
@@ -21,10 +21,10 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - Stored Neon connection string via User Secrets
 - Generated and applied migrations to Neon
 - Enabled Swagger UI at `/swagger`
-- **`POST /api/Links`** — create a short link
-- **`GET /api/Links`** — list links with click counts (paginated)
-- **`GET /{code}`** — redirect to original URL with click tracking
-- **`DELETE /api/Links/{id}`** — soft-delete a link
+- **`POST /api/Links`** — create a short link (auth required)
+- **`GET /api/Links`** — list your links with click counts (auth required, paginated)
+- **`GET /{code}`** — public redirect with click tracking
+- **`DELETE /api/Links/{id}`** — soft-delete your own link (auth required)
 - Short code generator (base62, 7 chars)
 - DTOs: `CreateLinkRequest`, `CreateLinkResponse`, `LinkListItemResponse`, `PagedResponse<T>`
 - Click tracking: `Click` row inserted on every redirect
@@ -36,25 +36,52 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - BCrypt password hashing (`BCrypt.Net-Next`)
 - JWT bearer authentication wired into `Program.cs`
 - Swagger UI configured with JWT Authorization button
-- Made `Link.UserId` nullable temporarily (auth doesn't exist yet)
+- **`[Authorize]` enforced on all Links endpoints**
+- **Ownership rules: users only see and delete their own links**
+- **`Link.UserId` is required (`Guid`, cascade delete)**
+- `GetCurrentUserId()` helper reads `sub` claim from JWT
+- Redirect endpoint exempted via `[AllowAnonymous]`
 
 ### 🚧 In Progress
-- Day 6 Part 2: locking down `LinksController` with `[Authorize]` and ownership rules
+- Preparing for Day 7 (validation, error handling, advanced queries)
 
-### 📝 Next Up (Day 6 Part 2)
-- Flip `Link.UserId` back to required (`Guid`) and delete behavior back to `Cascade`
-- Add migration for the schema change
-- Add `[Authorize]` at the class level on `LinksController`
-- Add `[AllowAnonymous]` on the redirect endpoint
-- Update `CreateLink` to set `UserId` from the JWT
-- Update `GetLinks` to filter by `UserId`
-- Update `DeleteLink` to check ownership
-- Full flow test: register → login → create → list → delete
-- Negative tests: 401 without token, 404 for other users' links
+### 📝 Next Up (Day 7)
+- Install FluentValidation
+- Validate `originalUrl` (URL format, length, scheme)
+- Validate email format and password strength
+- Global exception middleware — consistent error response shape with `traceId`
+- Add filtering to `GET /api/Links` (`?isActive=true`, `?search=...`)
+- Add sorting (`?sort=createdAt_desc`)
+- Custom 400 responses for validation failures
 
 ---
 
 ## 🗓️ Daily Log
+
+### 2026-10-07 (Day 6, Part 2)
+- Flipped `Link.UserId` back to required (`Guid`, not `Guid?`)
+- Changed User→Link delete behavior from `SetNull` back to `Cascade`
+- Created migration `MakeLinkUserIdRequired` and applied to Neon
+- Cleared orphaned test rows before migration
+- Added `[Authorize]` at class level on `LinksController`
+- Added `[AllowAnonymous]` on `RedirectToUrl` so short links stay public
+- Added `GetCurrentUserId()` helper — reads `sub` claim from JWT
+  - Checks both `JwtRegisteredClaimNames.Sub` and `ClaimTypes.NameIdentifier`
+    for compatibility across token handler versions
+- Updated `CreateLink` to set `UserId` from the token
+- Updated `GetLinks` to filter by `UserId`
+- Updated `DeleteLink` to check ownership — returns 404 (not 403) for
+  other users' links to avoid leaking existence
+- Fixed `appsettings.json` structure:
+  - Moved `Serilog` out of `Logging` to top level
+  - Added missing `Jwt` section (Issuer, Audience, placeholder Key)
+- Verified JWT payload now includes `iss` and `aud` claims
+- Full end-to-end test passed:
+  - Register → authorize → create link → 201
+  - List → only own links returned
+  - No token → 401
+  - Delete another user's link → 404
+  - Public redirect still works without token
 
 ### 2026-10-06 (Day 6, Part 1)
 - Installed `BCrypt.Net-Next` (Infrastructure), `Microsoft.AspNetCore.Authentication.JwtBearer` and `System.IdentityModel.Tokens.Jwt` (Api)
@@ -144,6 +171,7 @@ UrlShortener.API-->Infrastructure-->Core
 
 Tests ──► Api + Infrastructure
 
+
 **Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`. This keeps the domain clean.
 
 ---
@@ -153,20 +181,18 @@ Tests ──► Api + Infrastructure
 | Table | Purpose | Key Columns |
 |---|---|---|
 | `Users` | Registered users | `Id`, `Email` (unique), `PasswordHash` (BCrypt), `CreatedAt` |
-| `Links` | Shortened URLs | `Id`, `UserId` (FK, nullable — see note), `ShortCode` (unique), `OriginalUrl`, `IsActive` |
+| `Links` | Shortened URLs | `Id`, `UserId` (FK, required), `ShortCode` (unique), `OriginalUrl`, `IsActive` |
 | `Clicks` | Click tracking | `Id` (long), `LinkId` (FK), `ClickedAt`, `UserAgent`, `Referrer`, `IpHash` |
 
 **Relationships:**
-- One `User` → many `Links` (`SetNull` on delete — temporary until Day 6 Part 2)
-- One `Link` → many `Clicks` (`Cascade` on delete)
-
-> **Note on `Link.UserId`:** Currently nullable because ownership rules haven't been enforced yet. Anonymous links have `UserId = NULL`. This will flip back to required (`Guid`, cascade delete) in Day 6 Part 2.
+- One `User` → many `Links` (`Cascade` on delete — deleting a user removes their links)
+- One `Link` → many `Clicks` (`Cascade` on delete — deleting a link removes its clicks)
 
 ---
 
 ## 🔌 API Endpoints
 
-### Auth
+### Auth (public)
 
 | Method | Route | Purpose |
 |---|---|---|
@@ -177,12 +203,16 @@ Tests ──► Api + Infrastructure
 
 | Method | Route | Purpose | Auth |
 |---|---|---|---|
-| `POST` | `/api/Links` | Create a short link | Public (for now) |
-| `GET` | `/api/Links?page=1&pageSize=20` | List links with click counts | Public (for now) |
-| `GET` | `/{code}` | Redirect to the original URL | Public (always) |
-| `DELETE` | `/api/Links/{id}` | Soft-delete a link | Public (for now) |
+| `POST` | `/api/Links` | Create a short link | 🔒 Required |
+| `GET` | `/api/Links?page=1&pageSize=20` | List **your** links with click counts | 🔒 Required |
+| `GET` | `/{code}` | Redirect to the original URL | 🌐 Public |
+| `DELETE` | `/api/Links/{id}` | Soft-delete **your** link | 🔒 Required |
 
-> **Note:** Auth enforcement on Links endpoints arrives in Day 6 Part 2.
+**Notes:**
+- Protected endpoints require `Authorization: Bearer <jwt>` header
+- Users can only see and delete their own links
+- Attempting to delete another user's link returns **404** (not 403) to avoid leaking existence
+- Redirect endpoint is intentionally public — anyone with a short URL should be redirected
 
 ### Example: Register
 
