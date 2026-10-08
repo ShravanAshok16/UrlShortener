@@ -6,6 +6,10 @@ using Microsoft.OpenApi;
 using Serilog;
 using UrlShortener.Api.Services;
 using UrlShortener.Infrastructure.Data;
+using FluentValidation;
+using FluentValidation.AspNetCore;
+using UrlShortener.Api.Validators;
+using UrlShortener.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +46,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Controllers + Swagger
 builder.Services.AddControllers();
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateLinkRequestValidator>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -62,6 +68,9 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+
+// Add the exception handling middleware at the top of the pipeline
+app.UseMiddleware<ExceptionHandlingMiddleware>(); 
 
 app.UseAuthentication();  // MUST come before UseAuthorization
 app.UseAuthorization();
