@@ -8,5 +8,6 @@ namespace UrlShortener.Api.Models
     public class CreateLinkRequest
     {
         public string OriginalUrl { get; set; } = string.Empty;
+        public DateTime? ExpiresAt { get; set; }
     }
 }
