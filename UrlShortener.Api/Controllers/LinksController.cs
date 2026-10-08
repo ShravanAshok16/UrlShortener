@@ -35,6 +35,7 @@ namespace UrlShortener.Api.Controllers
                 OriginalUrl = request.OriginalUrl,
                 ShortCode = ShortCodeGenerator.Generate(),
                 CreatedAt = DateTime.UtcNow,
+                ExpiresAt = request.ExpiresAt, 
                 IsActive = true
             };
 
@@ -47,7 +48,8 @@ namespace UrlShortener.Api.Controllers
                 OriginalUrl = link.OriginalUrl,
                 ShortCode = link.ShortCode,
                 ShortUrl = $"{baseUrl}/{link.ShortCode}",
-                CreatedAt = link.CreatedAt
+                CreatedAt = link.CreatedAt,
+                ExpiresAt = link.ExpiresAt
             });
         }
 
@@ -103,6 +105,7 @@ namespace UrlShortener.Api.Controllers
                     ShortUrl = $"{baseUrl}/{l.ShortCode}",
                     ClickCount = l.Clicks.Count,
                     CreatedAt = l.CreatedAt,
+                    ExpiresAt = l.ExpiresAt,
                     IsActive = l.IsActive
                 })
                 .ToListAsync();
