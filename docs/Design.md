@@ -6,6 +6,38 @@
 > v2.0 changes: expanded for the React frontend. Added responsive
 > breakpoints, component states, motion, accessibility, and dark mode plan.
 
+## System Design — URL Shortener at Scale
+
+> This document is a design exercise. It describes how you would
+> build a URL shortener at 90M users / 340 reads per second.
+> None of this is implemented in the current project — it's
+> preparation for system-design interviews and future work.
+
+### Requirements
+- Functional: create short URL, redirect, unique + unpredictable, expiry
+- Non-functional: 99.99% uptime, p99 latency < 50ms, horizontal scale
+
+### Traffic Estimation
+- 90M MAU
+- 90M writes/month → ~34 writes/sec (avg)
+- 1:10 write:read ratio
+- 900M reads/month → ~340 reads/sec (avg)
+- Peak: 3–5× average → ~1500 reads/sec at peak
+
+### Storage
+- 2 KB per URL record (long URL + metadata)
+- 90M URLs/month → 180 GB/month
+- 5 years → ~10 TB
+
+### Design
+[diagrams + explanations of sharding, caching, CDN, etc.]
+
+### What I'd actually do at each scale tier
+- 0–10K users: single Postgres + single API instance ← current project
+- 10K–1M: Redis cache + read replica
+- 1M–10M: sharded Postgres, CDN for redirects
+- 10M–100M: multi-region, edge compute
+
 ## 1. Purpose
 
 This design system ensures:
@@ -88,3 +120,5 @@ Prefer `font-display: swap` for fast paint.
 
 ```css
 --text-hero: clamp(2rem, 5vw + 1rem, 3.5rem);
+
+
