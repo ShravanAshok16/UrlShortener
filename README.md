@@ -21,16 +21,16 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - Stored Neon connection string via User Secrets
 - Generated and applied migrations to Neon
 - Enabled Swagger UI at `/swagger`
-- **`POST /api/Links`** — create a short link (auth required, validated)
+- **`POST /api/Links`** — create a short link with optional expiry (auth required, validated)
 - **`GET /api/Links`** — list your links with click counts (auth required, paginated, filterable, sortable)
-- **`GET /{code}`** — public redirect with click tracking
+- **`GET /{code}`** — public redirect with click tracking and expiry enforcement
 - **`DELETE /api/Links/{id}`** — soft-delete your own link (auth required)
+- **`POST /api/Auth/register`** — register a new user, returns JWT
+- **`POST /api/Auth/login`** — validate credentials, returns JWT
 - Short code generator (base62, 7 chars)
 - DTOs: `CreateLinkRequest`, `CreateLinkResponse`, `LinkListItemResponse`, `PagedResponse<T>`
 - Click tracking: `Click` row inserted on every redirect
 - Hashed IP storage (SHA256) — no raw IPs in the DB
-- **`POST /api/Auth/register`** — register a new user, returns JWT
-- **`POST /api/Auth/login`** — validate credentials, returns JWT
 - `TokenService` — issues signed JWT tokens (HS256, 30-min lifetime)
 - `AuthResponse`, `RegisterRequest`, `LoginRequest` DTOs
 - BCrypt password hashing (`BCrypt.Net-Next`)
@@ -47,26 +47,28 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
   - `?isActive=true|false` — filter by active status
   - `?search=<term>` — search in original URLs
   - `?sort=created_asc|created_desc|clicks_asc|clicks_desc` — sorting
+- **Optional link expiration** — client can set `expiresAt` on create; expired links return 404
 
 ### 🚧 In Progress
 - Preparing for Day 8 (unit + integration tests)
 
 ### 📝 Next Up (Day 8)
-- xUnit tests for `ShortCodeGenerator`, `HashIp`
+- xUnit tests for `ShortCodeGenerator`, `HashIp`, validators
 - Integration tests via `WebApplicationFactory`
 - Full auth flow tests (register → login → create → list → delete)
 - Security tests: 401 without token, 404 for other users' links
-- Validation tests: rejects `javascript:`, empty URL, short password
+- Validation tests: rejects `javascript:`, empty URL, short password, past expiry
+- Expiry tests: valid link works, expired link 404s
 - Run all tests via `dotnet test`
 
 ---
 
 ## 🗓️ Daily Log
 
-### 2026-10-08 (Day 7)
+### 2026-10-08 (Day 7 + 7.5)
 - Installed `FluentValidation.AspNetCore` and `FluentValidation.DependencyInjectionExtensions`
 - Created validators in `UrlShortener.Api/Validators/`:
-  - `CreateLinkRequestValidator` — URL required, max 2048 chars, http/https only
+  - `CreateLinkRequestValidator` — URL required, ≤ 2048 chars, http/https only, expiry in future and ≤ 1 year
   - `RegisterRequestValidator` — email format, password min 8 chars with letter + number
   - `LoginRequestValidator` — non-empty email and password
 - Registered FluentValidation in DI with `AddValidatorsFromAssemblyContaining<T>()`
@@ -75,18 +77,25 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
   - Catches all unhandled exceptions
   - Logs full exception with trace ID via Serilog
   - Returns consistent JSON: `{ error, code, traceId, detail }`
-  - `detail` only included in Development environment
+  - `detail` only included in Development
   - Maps known exception types (401, 404) to appropriate statuses
 - Registered exception middleware as the **first** middleware in the pipeline
-- Enhanced `GetLinks` with:
-  - `isActive` filter (nullable bool)
-  - `search` filter (case-insensitive substring on OriginalUrl)
-  - `sort` parameter (`created_asc`, `created_desc`, `clicks_asc`, `clicks_desc`)
+- Enhanced `GetLinks` with `isActive`, `search`, and `sort` query parameters
+- **Added optional link expiration:**
+  - `CreateLinkRequest.ExpiresAt` (nullable `DateTime`)
+  - Validator rejects past dates and dates > 1 year in future
+  - `CreateLink` stores `ExpiresAt` on the entity
+  - `CreateLinkResponse` and `LinkListItemResponse` include `ExpiresAt`
+  - `GetLinks` projection includes `ExpiresAt`
+  - `RedirectToUrl` returns 404 for expired links
 - Verified end-to-end in Swagger:
   - `javascript:alert(1)` → 400 with clear error
   - Short password on register → 400 with password rules
-  - Filtering, search, and sorting all work
-  - Exception middleware returns clean JSON (tested with temporary throw)
+  - Past `expiresAt` → 400 "Expiration must be in the future"
+  - Far-future `expiresAt` → 400 "Expiration cannot exceed 1 year from now"
+  - Valid `expiresAt` → 201 with the field echoed back
+  - Live link with future expiry redirects correctly
+  - Expired link (tested with 30s expiry) returns 404
 
 ### 2026-10-07 (Day 6, Part 2)
 - Flipped `Link.UserId` back to required (`Guid`, not `Guid?`)
@@ -192,6 +201,7 @@ not rewriting code.
 - Custom load balancer — Render handles this
 
 
+
 **Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`.
 
 ---
@@ -201,7 +211,7 @@ not rewriting code.
 | Table | Purpose | Key Columns |
 |---|---|---|
 | `Users` | Registered users | `Id`, `Email` (unique), `PasswordHash` (BCrypt), `CreatedAt` |
-| `Links` | Shortened URLs | `Id`, `UserId` (FK), `ShortCode` (unique), `OriginalUrl`, `IsActive` |
+| `Links` | Shortened URLs | `Id`, `UserId` (FK), `ShortCode` (unique), `OriginalUrl`, `ExpiresAt` (nullable), `IsActive` |
 | `Clicks` | Click tracking | `Id` (long), `LinkId` (FK), `ClickedAt`, `UserAgent`, `Referrer`, `IpHash` |
 
 **Relationships:**
@@ -223,7 +233,7 @@ not rewriting code.
 
 | Method | Route | Purpose | Auth |
 |---|---|---|---|
-| `POST` | `/api/Links` | Create a short link | 🔒 Required |
+| `POST` | `/api/Links` | Create a short link (optional expiry) | 🔒 Required |
 | `GET` | `/api/Links` | List your links (paginated, filterable, sortable) | 🔒 Required |
 | `GET` | `/{code}` | Redirect to the original URL | 🌐 Public |
 | `DELETE` | `/api/Links/{id}` | Soft-delete your link | 🔒 Required |
@@ -238,7 +248,7 @@ not rewriting code.
 | `search` | string? | null | Case-insensitive search in original URL |
 | `sort` | string | `created_desc` | `created_asc`, `created_desc`, `clicks_asc`, `clicks_desc` |
 
-### Example: Create a short link (authenticated)
+### Example: Create a short link with optional expiry
 
 **Request:**
 ```http
@@ -247,5 +257,6 @@ Authorization: Bearer eyJhbGc...
 Content-Type: application/json
 
 {
-  "originalUrl": "https://example.com/some/long/path"
+  "originalUrl": "https://example.com/some/long/path",
+  "expiresAt": "2026-12-31T23:59:59Z"
 }
