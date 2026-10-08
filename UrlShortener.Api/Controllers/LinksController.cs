@@ -52,10 +52,12 @@ namespace UrlShortener.Api.Controllers
         }
 
         [HttpGet]
-        [HttpGet]
         public async Task<ActionResult<PagedResponse<LinkListItemResponse>>> GetLinks(
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int pageSize = 20,
+            [FromQuery] bool? isActive = null,
+            [FromQuery] string? search = null,
+            [FromQuery] string sort = "created_desc")
         {
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -65,8 +67,28 @@ namespace UrlShortener.Api.Controllers
 
             var query = _dbContext.Links
                 .AsNoTracking()
-                .Where(l => l.UserId == userId)              // <-- filter by owner
-                .OrderByDescending(l => l.CreatedAt);
+                .Where(l => l.UserId == userId);
+
+            // Filter: active status
+            if (isActive.HasValue)
+                query = query.Where(l => l.IsActive == isActive.Value);
+
+            // Filter: search in original URL
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToLower();
+                query = query.Where(l => l.OriginalUrl.ToLower().Contains(term));
+            }
+
+            // Sort
+            query = sort switch
+            {
+                "created_asc" => query.OrderBy(l => l.CreatedAt),
+                "created_desc" => query.OrderByDescending(l => l.CreatedAt),
+                "clicks_asc" => query.OrderBy(l => l.Clicks.Count),
+                "clicks_desc" => query.OrderByDescending(l => l.Clicks.Count),
+                _ => query.OrderByDescending(l => l.CreatedAt)
+            };
 
             var totalCount = await query.CountAsync();
 
