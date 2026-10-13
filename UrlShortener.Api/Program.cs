@@ -46,7 +46,20 @@ if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 }
-
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        policy
+            .WithOrigins(
+                "http://localhost:5173",     // Vite dev server
+                "https://url-shortener-ui.vercel.app"  // placeholder for Day 14
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 // Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddFluentValidationAutoValidation();
@@ -75,6 +88,9 @@ var app = builder.Build();
 // Add the exception handling middleware at the top of the pipeline
 app.UseMiddleware<ExceptionHandlingMiddleware>(); 
 
+// CORS — for the frontend (Day 11+)
+app.UseCors("FrontendPolicy");
+
 app.UseAuthentication();  // MUST come before UseAuthorization
 app.UseAuthorization();
 
@@ -85,6 +101,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseSerilogRequestLogging();
+// HTTPS redirect only outside Development (Render provides HTTPS at proxy)
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 app.UseHttpsRedirection();
 app.MapControllers();
 
