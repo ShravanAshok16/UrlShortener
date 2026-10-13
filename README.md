@@ -2,140 +2,134 @@
 
 A .NET solution for a URL Shortener application built with a layered (Clean) architecture.
 
-> **Last Updated:** 2026-10-08
+> **Last Updated:** 2026-10-13
 
 ---
 
 ## 📌 Current Status
 
-**Phase:** API hardening complete
-**Progress:** `[█████████░] 90%`
+**Phase:** Deployed and tested
+**Progress:** `[██████████] 100%` — backend complete
 
-### ✅ Done
-- Created solution and all projects
-- Added project references between layers
-- Added NuGet packages (EF Core, Npgsql, Serilog, Swashbuckle)
-- Defined domain entities: `User`, `Link`, `Click`
-- Configured `AppDbContext` with relationships and indexes
-- Wired EF Core + Serilog into `Program.cs`
-- Stored Neon connection string via User Secrets
-- Generated and applied migrations to Neon
-- Enabled Swagger UI at `/swagger`
-- **`POST /api/Links`** — create a short link with optional expiry (auth required, validated)
-- **`GET /api/Links`** — list your links with click counts (auth required, paginated, filterable, sortable)
+### ✅ Backend Complete
+- Solution with 4 projects (Api / Core / Infrastructure / Tests)
+- EF Core + Neon PostgreSQL with migrations
+- Serilog structured logging
+- **`POST /api/Links`** — create a short link (auth required, optional expiry, validated)
+- **`GET /api/Links`** — list your links (auth required, paginated, filterable, sortable)
 - **`GET /{code}`** — public redirect with click tracking and expiry enforcement
 - **`DELETE /api/Links/{id}`** — soft-delete your own link (auth required)
 - **`POST /api/Auth/register`** — register a new user, returns JWT
 - **`POST /api/Auth/login`** — validate credentials, returns JWT
 - Short code generator (base62, 7 chars)
-- DTOs: `CreateLinkRequest`, `CreateLinkResponse`, `LinkListItemResponse`, `PagedResponse<T>`
-- Click tracking: `Click` row inserted on every redirect
-- Hashed IP storage (SHA256) — no raw IPs in the DB
-- `TokenService` — issues signed JWT tokens (HS256, 30-min lifetime)
-- `AuthResponse`, `RegisterRequest`, `LoginRequest` DTOs
-- BCrypt password hashing (`BCrypt.Net-Next`)
-- JWT bearer authentication wired into `Program.cs`
-- Swagger UI configured with JWT Authorization button
-- `[Authorize]` enforced on all Links endpoints
-- Ownership rules: users only see and delete their own links
-- `Link.UserId` is required (`Guid`, cascade delete)
-- **FluentValidation** for all request DTOs
-- **URL scheme allowlist** — only `http://` and `https://` accepted
-- **Password complexity rules** — min 8 chars, ≥1 letter, ≥1 number
-- **Global exception middleware** — consistent error responses with trace IDs
-- **Query parameters on `GetLinks`:**
-  - `?isActive=true|false` — filter by active status
-  - `?search=<term>` — search in original URLs
-  - `?sort=created_asc|created_desc|clicks_asc|clicks_desc` — sorting
-- **Optional link expiration** — client can set `expiresAt` on create; expired links return 404
+- DTOs for every request/response
+- Click tracking with hashed IPs (SHA256)
+- `TokenService` — HS256-signed JWTs with 30-minute expiry
+- BCrypt password hashing
+- `[Authorize]` enforced with ownership rules (404 for cross-user access)
+- FluentValidation for all request DTOs
+- URL scheme allowlist (http/https only)
+- Global exception middleware with trace IDs
+- Query filtering and sorting on `GetLinks`
+- Optional link expiration (future-only, ≤ 1 year)
+- **30 automated tests** — unit + integration (auth, security, ownership, expiry)
+- **Deployed to Render** at `https://url-shortener-api-edae.onrender.com`
 
 ### 🚧 In Progress
-- Preparing for Day 8 (unit + integration tests)
+- Day 10: Security pass (rate limiting, HMAC IP hashing, security headers)
 
-### 📝 Next Up (Day 8)
-- xUnit tests for `ShortCodeGenerator`, `HashIp`, validators
-- Integration tests via `WebApplicationFactory`
-- Full auth flow tests (register → login → create → list → delete)
-- Security tests: 401 without token, 404 for other users' links
-- Validation tests: rejects `javascript:`, empty URL, short password, past expiry
-- Expiry tests: valid link works, expired link 404s
-- Run all tests via `dotnet test`
+### 📝 Next Up
+- Day 10: Security hardening (tomorrow)
+- Day 11: Frontend setup (Vite + React + TypeScript + Tailwind)
+- Day 12: Frontend landing + auth pages
+- Day 13: Frontend dashboard + responsive polish
+- Day 14: Frontend deploy + security audit
+- Day 15: Final README + SECURITY.md + retrospective
 
 ---
 
 ## 🗓️ Daily Log
 
-### 2026-10-08 (Day 7 + 7.5)
+### 2026-10-13 (Days 8 + 9)
+**Day 8 — Tests:**
+- Installed `Microsoft.AspNetCore.Mvc.Testing`, `FluentAssertions`, `Microsoft.EntityFrameworkCore.InMemory` in test project
+- Added `public partial class Program { }` to `Program.cs` for test project accessibility
+- Wrote unit tests:
+  - `ShortCodeGeneratorTests` — length, charset, uniqueness across 1000 runs
+  - `CreateLinkRequestValidatorTests` — valid/invalid URLs, expiry rules, `javascript:` rejection
+- Wrote integration tests via `WebApplicationFactory`:
+  - `CustomWebApplicationFactory` with in-memory DB (shared per test factory)
+  - `AuthFlowTests` — register, login, duplicate email, weak password, wrong password, unknown email
+  - `LinkSecurityTests` — 401 without token, 404 on cross-user delete, ownership filtering, `javascript:` rejection, expired link 404
+- Made `Program.cs` skip Npgsql registration in Testing environment (env-flag pattern)
+- Fixed in-memory DB not persisting across requests (moved Guid to captured variable)
+- Test summary: **30 passing, 0 failing**
+
+**Day 9 — Deploy:**
+- Created `Dockerfile` (multi-stage: SDK build → ASP.NET runtime)
+- Created `.dockerignore` to keep build context small
+- Added CORS policy for future frontend origins
+- Added `UseHsts()` for non-Development environments
+- Configured Render Web Service:
+  - Docker runtime, `./Dockerfile`
+  - Env vars: `ConnectionStrings__Default`, `Jwt__Key`, `AppSettings__BaseUrl`, `ASPNETCORE_ENVIRONMENT=Production`
+- Deployed successfully: `https://url-shortener-api-edae.onrender.com`
+- Verified:
+  - `POST /api/Auth/register` returns valid JWT
+  - 404 at root (expected — no endpoint mapped)
+  - 405 at `/api/Auth/register` without POST (correct)
+
+### 2026-10-08 (Days 7 + 7.5)
 - Installed `FluentValidation.AspNetCore` and `FluentValidation.DependencyInjectionExtensions`
-- Created validators in `UrlShortener.Api/Validators/`:
-  - `CreateLinkRequestValidator` — URL required, ≤ 2048 chars, http/https only, expiry in future and ≤ 1 year
-  - `RegisterRequestValidator` — email format, password min 8 chars with letter + number
-  - `LoginRequestValidator` — non-empty email and password
-- Registered FluentValidation in DI with `AddValidatorsFromAssemblyContaining<T>()`
-- Enabled auto-validation via `AddFluentValidationAutoValidation()`
+- Created validators: `CreateLinkRequest`, `RegisterRequest`, `LoginRequest`
+- Registered FluentValidation in DI with auto-validation
 - Created `ExceptionHandlingMiddleware`:
   - Catches all unhandled exceptions
   - Logs full exception with trace ID via Serilog
-  - Returns consistent JSON: `{ error, code, traceId, detail }`
-  - `detail` only included in Development
-  - Maps known exception types (401, 404) to appropriate statuses
-- Registered exception middleware as the **first** middleware in the pipeline
-- Enhanced `GetLinks` with `isActive`, `search`, and `sort` query parameters
+  - Returns `{ error, code, traceId, detail }`
+  - `detail` only in Development
+- Registered exception middleware first in the pipeline
+- Enhanced `GetLinks` with `isActive`, `search`, `sort` parameters
 - **Added optional link expiration:**
-  - `CreateLinkRequest.ExpiresAt` (nullable `DateTime`)
-  - Validator rejects past dates and dates > 1 year in future
-  - `CreateLink` stores `ExpiresAt` on the entity
-  - `CreateLinkResponse` and `LinkListItemResponse` include `ExpiresAt`
-  - `GetLinks` projection includes `ExpiresAt`
+  - `CreateLinkRequest.ExpiresAt` (nullable)
+  - Validator rejects past dates and dates > 1 year out
+  - `CreateLink` stores `ExpiresAt`
+  - `CreateLinkResponse`, `LinkListItemResponse` include `ExpiresAt`
   - `RedirectToUrl` returns 404 for expired links
-- Verified end-to-end in Swagger:
-  - `javascript:alert(1)` → 400 with clear error
-  - Short password on register → 400 with password rules
-  - Past `expiresAt` → 400 "Expiration must be in the future"
-  - Far-future `expiresAt` → 400 "Expiration cannot exceed 1 year from now"
-  - Valid `expiresAt` → 201 with the field echoed back
-  - Live link with future expiry redirects correctly
-  - Expired link (tested with 30s expiry) returns 404
 
 ### 2026-10-07 (Day 6, Part 2)
 - Flipped `Link.UserId` back to required (`Guid`, not `Guid?`)
 - Changed User→Link delete behavior from `SetNull` back to `Cascade`
 - Created migration `MakeLinkUserIdRequired` and applied to Neon
-- Cleared orphaned test rows before migration
 - Added `[Authorize]` at class level on `LinksController`
-- Added `[AllowAnonymous]` on `RedirectToUrl` so short links stay public
-- Added `GetCurrentUserId()` helper — reads `sub` claim from JWT
-- Updated `CreateLink` to set `UserId` from the token
+- Added `[AllowAnonymous]` on `RedirectToUrl`
+- Added `GetCurrentUserId()` helper — reads `sub` claim
+- Updated `CreateLink` to set `UserId` from token
 - Updated `GetLinks` to filter by `UserId`
-- Updated `DeleteLink` to check ownership — returns 404 (not 403)
-- Fixed `appsettings.json` structure:
-  - Moved `Serilog` out of `Logging` to top level
-  - Added missing `Jwt` section (Issuer, Audience, placeholder Key)
-- Verified JWT payload now includes `iss` and `aud` claims
+- Updated `DeleteLink` to check ownership — 404 for other users
+- Fixed `appsettings.json` structure: moved `Serilog` out of `Logging`, added `Jwt` section
+- Verified JWT payload includes `iss` and `aud` claims
 
 ### 2026-10-06 (Day 6, Part 1)
-- Installed `BCrypt.Net-Next`, `Microsoft.AspNetCore.Authentication.JwtBearer`, `System.IdentityModel.Tokens.Jwt`
-- Added `Jwt` section to `appsettings.json`
-- Stored real `Jwt:Key` in User Secrets
-- Created `TokenService` — issues HS256-signed JWTs with 30-min lifetime
-- Created DTOs: `RegisterRequest`, `LoginRequest`, `AuthResponse`
-- Created `AuthController` with register + login endpoints
+- Installed `BCrypt.Net-Next`, JWT packages
+- Added `Jwt` section to `appsettings.json`, stored key in User Secrets
+- Created `TokenService` — issues HS256-signed JWTs with 30-min expiry
+- Created `AuthController` with register + login
 - Wired JWT bearer auth in `Program.cs`
-- Added Swagger security definition so the **Authorize** button appears
+- Added Swagger security definition for Authorize button
 - Resolved `Microsoft.OpenApi` v2.x namespace changes
 
 ### 2026-10-05 (Day 5)
-- Added DTOs: `LinkListItemResponse`, `PagedResponse<T>`
+- Added `LinkListItemResponse`, `PagedResponse<T>` DTOs
 - Added `GET /api/Links` with pagination and click counts
-- Updated `RedirectToUrl` to insert a `Click` row before redirecting
-- Added `HashIp` helper — SHA256 hashing so raw IPs are never stored
+- Updated `RedirectToUrl` to insert a `Click` row
+- Added `HashIp` helper — SHA256, never stores raw IPs
 - Added `DELETE /api/Links/{id}` — soft delete
 
 ### 2026-10-03 (Day 4)
 - Created `ShortCodeGenerator` (base62, 7 chars)
 - Created `CreateLinkRequest` and `CreateLinkResponse` DTOs
-- Created `LinksController` with POST and redirect endpoints
-- Added `AppSettings:BaseUrl` to `appsettings.json`
+- Created `LinksController` with POST + redirect
 - Made `Link.UserId` nullable temporarily
 
 ### 2026-10-01 (Day 3)
@@ -147,12 +141,10 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 
 ### 2026-09-29 (Day 2)
 - Created `User`, `Link`, `Click` entities
-- Created `AppDbContext` with relationships, unique indexes, cascade deletes
+- Created `AppDbContext` with relationships and indexes
 
 ### 2026-09-28 (Day 1)
 - Created solution and 4 projects
-- Added project references
-- Added initial NuGet packages
 
 <!-- Add new entries at the top, newest first -->
 
@@ -202,6 +194,7 @@ not rewriting code.
 
 
 
+
 **Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`.
 
 ---
@@ -211,7 +204,7 @@ not rewriting code.
 | Table | Purpose | Key Columns |
 |---|---|---|
 | `Users` | Registered users | `Id`, `Email` (unique), `PasswordHash` (BCrypt), `CreatedAt` |
-| `Links` | Shortened URLs | `Id`, `UserId` (FK), `ShortCode` (unique), `OriginalUrl`, `ExpiresAt` (nullable), `IsActive` |
+| `Links` | Shortened URLs | `Id`, `UserId` (FK), `ShortCode` (unique), `OriginalUrl`, `ExpiresAt`, `IsActive` |
 | `Clicks` | Click tracking | `Id` (long), `LinkId` (FK), `ClickedAt`, `UserAgent`, `Referrer`, `IpHash` |
 
 **Relationships:**
@@ -248,15 +241,14 @@ not rewriting code.
 | `search` | string? | null | Case-insensitive search in original URL |
 | `sort` | string | `created_desc` | `created_asc`, `created_desc`, `clicks_asc`, `clicks_desc` |
 
-### Example: Create a short link with optional expiry
+### Example: Register
 
 **Request:**
 ```http
-POST /api/Links
-Authorization: Bearer eyJhbGc...
+POST /api/Auth/register
 Content-Type: application/json
 
 {
-  "originalUrl": "https://example.com/some/long/path",
-  "expiresAt": "2026-12-31T23:59:59Z"
+  "email": "test@example.com",
+  "password": "Password123!"
 }
