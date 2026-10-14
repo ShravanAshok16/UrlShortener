@@ -2,14 +2,14 @@
 
 A .NET solution for a URL Shortener application built with a layered (Clean) architecture.
 
-> **Last Updated:** 2026-10-13
+> **Last Updated:** 2026-10-14
 
 ---
 
 ## 📌 Current Status
 
-**Phase:** Deployed and tested
-**Progress:** `[██████████] 100%` — backend complete
+**Phase:** Backend complete and hardened
+**Progress:** `[██████████] 100%` — backend
 
 ### ✅ Backend Complete
 - Solution with 4 projects (Api / Core / Infrastructure / Tests)
@@ -23,8 +23,8 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - **`POST /api/Auth/login`** — validate credentials, returns JWT
 - Short code generator (base62, 7 chars)
 - DTOs for every request/response
-- Click tracking with hashed IPs (SHA256)
-- `TokenService` — HS256-signed JWTs with 30-minute expiry
+- Click tracking with HMAC-SHA256-hashed IPs
+- `TokenService` — HS256-signed JWTs with configurable expiry
 - BCrypt password hashing
 - `[Authorize]` enforced with ownership rules (404 for cross-user access)
 - FluentValidation for all request DTOs
@@ -32,116 +32,102 @@ A .NET solution for a URL Shortener application built with a layered (Clean) arc
 - Global exception middleware with trace IDs
 - Query filtering and sorting on `GetLinks`
 - Optional link expiration (future-only, ≤ 1 year)
-- **30 automated tests** — unit + integration (auth, security, ownership, expiry)
+- **30 automated tests** (unit + integration)
+- **Rate limiting** (100/min global, 10/min auth)
+- **Security headers** (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, CSP)
+- **HMAC-SHA256 IP hashing** (keyed, non-reversible)
 - **Deployed to Render** at `https://url-shortener-api-edae.onrender.com`
 
-### 🚧 In Progress
-- Day 10: Security pass (rate limiting, HMAC IP hashing, security headers)
-
 ### 📝 Next Up
-- Day 10: Security hardening (tomorrow)
 - Day 11: Frontend setup (Vite + React + TypeScript + Tailwind)
 - Day 12: Frontend landing + auth pages
-- Day 13: Frontend dashboard + responsive polish
+- Day 13: Frontend dashboard + responsive polish + backlog
 - Day 14: Frontend deploy + security audit
 - Day 15: Final README + SECURITY.md + retrospective
 
 ---
 
+## 📚 Documentation
+
+- [Requirements](docs/REQUIREMENTS.md) — what the system must do (backend + frontend)
+- [Design System](docs/DESIGN.md) — colors, typography, components, accessibility
+- [Architecture](docs/ARCHITECTURE.md) — layers, data model, deployment, decisions
+- [Frontend Structure](docs/FRONTEND_STRUCTURE.md) — conventions for the React app
+
+---
+
 ## 🗓️ Daily Log
+
+### 2026-10-14 (Day 10 — Security Pass)
+- Added `AddRateLimiter` with two policies:
+  - Global: 100 requests/minute per IP
+  - Named "auth": 10 requests/minute per IP
+- Applied `[EnableRateLimiting("auth")]` to `AuthController`
+- Registered `app.UseRateLimiter()` in the pipeline after auth
+- Replaced SHA256 with **HMAC-SHA256** for IP hashing in `LinksController.HashIp`
+  - `HashIp` is no longer static (needs config)
+  - `AppSettings:IpHashKey` set in User Secrets + Render env vars
+- Created `SecurityHeadersMiddleware`:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+  - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
+- Registered security headers middleware **first** in the pipeline
+- Replaced `BaseUrl` hardcoded fallback with `GetBaseUrl()` that throws on missing config
+- Moved JWT lifetime to config (`Jwt:ExpiresMinutes = 30`)
+- Verified no secrets in git history
+- Verified all features in production (Render)
 
 ### 2026-10-13 (Days 8 + 9)
 **Day 8 — Tests:**
-- Installed `Microsoft.AspNetCore.Mvc.Testing`, `FluentAssertions`, `Microsoft.EntityFrameworkCore.InMemory` in test project
-- Added `public partial class Program { }` to `Program.cs` for test project accessibility
-- Wrote unit tests:
-  - `ShortCodeGeneratorTests` — length, charset, uniqueness across 1000 runs
-  - `CreateLinkRequestValidatorTests` — valid/invalid URLs, expiry rules, `javascript:` rejection
+- Installed `Microsoft.AspNetCore.Mvc.Testing`, `FluentAssertions`, `Microsoft.EntityFrameworkCore.InMemory`
+- Added `public partial class Program { }` to `Program.cs`
+- Wrote unit tests (ShortCodeGenerator, validators)
 - Wrote integration tests via `WebApplicationFactory`:
-  - `CustomWebApplicationFactory` with in-memory DB (shared per test factory)
-  - `AuthFlowTests` — register, login, duplicate email, weak password, wrong password, unknown email
-  - `LinkSecurityTests` — 401 without token, 404 on cross-user delete, ownership filtering, `javascript:` rejection, expired link 404
-- Made `Program.cs` skip Npgsql registration in Testing environment (env-flag pattern)
-- Fixed in-memory DB not persisting across requests (moved Guid to captured variable)
-- Test summary: **30 passing, 0 failing**
+  - `CustomWebApplicationFactory` with in-memory DB (shared per factory)
+  - `AuthFlowTests`, `LinkSecurityTests`
+- Made `Program.cs` skip Npgsql registration in Testing environment
+- Fixed in-memory DB not persisting across requests
+- Test summary: 30 passing, 0 failing
 
 **Day 9 — Deploy:**
 - Created `Dockerfile` (multi-stage: SDK build → ASP.NET runtime)
-- Created `.dockerignore` to keep build context small
+- Created `.dockerignore`
 - Added CORS policy for future frontend origins
 - Added `UseHsts()` for non-Development environments
-- Configured Render Web Service:
-  - Docker runtime, `./Dockerfile`
-  - Env vars: `ConnectionStrings__Default`, `Jwt__Key`, `AppSettings__BaseUrl`, `ASPNETCORE_ENVIRONMENT=Production`
+- Configured Render Web Service
 - Deployed successfully: `https://url-shortener-api-edae.onrender.com`
-- Verified:
-  - `POST /api/Auth/register` returns valid JWT
-  - 404 at root (expected — no endpoint mapped)
-  - 405 at `/api/Auth/register` without POST (correct)
 
 ### 2026-10-08 (Days 7 + 7.5)
 - Installed `FluentValidation.AspNetCore` and `FluentValidation.DependencyInjectionExtensions`
 - Created validators: `CreateLinkRequest`, `RegisterRequest`, `LoginRequest`
-- Registered FluentValidation in DI with auto-validation
-- Created `ExceptionHandlingMiddleware`:
-  - Catches all unhandled exceptions
-  - Logs full exception with trace ID via Serilog
-  - Returns `{ error, code, traceId, detail }`
-  - `detail` only in Development
-- Registered exception middleware first in the pipeline
-- Enhanced `GetLinks` with `isActive`, `search`, `sort` parameters
-- **Added optional link expiration:**
-  - `CreateLinkRequest.ExpiresAt` (nullable)
-  - Validator rejects past dates and dates > 1 year out
-  - `CreateLink` stores `ExpiresAt`
-  - `CreateLinkResponse`, `LinkListItemResponse` include `ExpiresAt`
-  - `RedirectToUrl` returns 404 for expired links
+- Created `ExceptionHandlingMiddleware` (structured JSON errors)
+- Enhanced `GetLinks` with `isActive`, `search`, `sort`
+- Added optional link expiration
 
 ### 2026-10-07 (Day 6, Part 2)
-- Flipped `Link.UserId` back to required (`Guid`, not `Guid?`)
-- Changed User→Link delete behavior from `SetNull` back to `Cascade`
-- Created migration `MakeLinkUserIdRequired` and applied to Neon
-- Added `[Authorize]` at class level on `LinksController`
-- Added `[AllowAnonymous]` on `RedirectToUrl`
-- Added `GetCurrentUserId()` helper — reads `sub` claim
-- Updated `CreateLink` to set `UserId` from token
-- Updated `GetLinks` to filter by `UserId`
-- Updated `DeleteLink` to check ownership — 404 for other users
-- Fixed `appsettings.json` structure: moved `Serilog` out of `Logging`, added `Jwt` section
-- Verified JWT payload includes `iss` and `aud` claims
+- Flipped `Link.UserId` back to required
+- Added `[Authorize]` on `LinksController`, `[AllowAnonymous]` on redirect
+- Added `GetCurrentUserId()` helper
+- Fixed `appsettings.json` structure
 
 ### 2026-10-06 (Day 6, Part 1)
-- Installed `BCrypt.Net-Next`, JWT packages
-- Added `Jwt` section to `appsettings.json`, stored key in User Secrets
-- Created `TokenService` — issues HS256-signed JWTs with 30-min expiry
-- Created `AuthController` with register + login
-- Wired JWT bearer auth in `Program.cs`
-- Added Swagger security definition for Authorize button
-- Resolved `Microsoft.OpenApi` v2.x namespace changes
+- Added JWT auth infrastructure (`TokenService`, `AuthController`)
+- Wired JWT bearer auth, Swagger security definition
 
 ### 2026-10-05 (Day 5)
-- Added `LinkListItemResponse`, `PagedResponse<T>` DTOs
 - Added `GET /api/Links` with pagination and click counts
-- Updated `RedirectToUrl` to insert a `Click` row
-- Added `HashIp` helper — SHA256, never stores raw IPs
-- Added `DELETE /api/Links/{id}` — soft delete
+- Added click tracking, `HashIp` helper, soft delete
 
 ### 2026-10-03 (Day 4)
-- Created `ShortCodeGenerator` (base62, 7 chars)
-- Created `CreateLinkRequest` and `CreateLinkResponse` DTOs
-- Created `LinksController` with POST + redirect
-- Made `Link.UserId` nullable temporarily
+- Created `ShortCodeGenerator`, DTOs, `LinksController`
 
 ### 2026-10-01 (Day 3)
-- Installed Swashbuckle for Swagger UI
-- Stored Neon connection string in User Secrets
-- Wired EF Core into `Program.cs`
-- Generated and applied `InitialCreate` migration
-- Added `.gitignore`
+- Wired EF Core to Neon, first migration, `.gitignore`
 
 ### 2026-09-29 (Day 2)
-- Created `User`, `Link`, `Click` entities
-- Created `AppDbContext` with relationships and indexes
+- Created entities and `AppDbContext`
 
 ### 2026-09-28 (Day 1)
 - Created solution and 4 projects
@@ -195,6 +181,7 @@ not rewriting code.
 
 
 
+
 **Dependency rule:** `Core` depends on nothing. `Infrastructure` and `Api` both depend on `Core`.
 
 ---
@@ -215,7 +202,7 @@ not rewriting code.
 
 ## 🔌 API Endpoints
 
-### Auth (public)
+### Auth (public, rate-limited to 10/min/IP)
 
 | Method | Route | Purpose |
 |---|---|---|
