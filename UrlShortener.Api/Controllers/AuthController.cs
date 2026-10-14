@@ -15,11 +15,13 @@ public class AuthController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly TokenService _tokenService;
+    private readonly IConfiguration _config;      // <-- add this
 
-    public AuthController(AppDbContext db, TokenService tokenService)
+    public AuthController(AppDbContext db, TokenService tokenService, IConfiguration config)
     {
         _db = db;
         _tokenService = tokenService;
+        _config = config;                        // <-- add this
     }
 
     [HttpPost("register")]
