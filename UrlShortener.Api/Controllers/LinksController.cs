@@ -27,7 +27,7 @@ namespace UrlShortener.Api.Controllers
         public async Task<ActionResult<CreateLinkResponse>> CreateLink([FromBody] CreateLinkRequest request)
         {
             var userId = GetCurrentUserId();
-            var baseUrl = _config["AppSettings:BaseUrl"] ?? "http://localhost:5029";
+            var baseUrl = GetBaseUrl();
 
             var link = new Link
             {
@@ -35,7 +35,7 @@ namespace UrlShortener.Api.Controllers
                 OriginalUrl = request.OriginalUrl,
                 ShortCode = ShortCodeGenerator.Generate(),
                 CreatedAt = DateTime.UtcNow,
-                ExpiresAt = request.ExpiresAt, 
+                ExpiresAt = request.ExpiresAt,
                 IsActive = true
             };
 
@@ -65,7 +65,7 @@ namespace UrlShortener.Api.Controllers
             if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
             var userId = GetCurrentUserId();
-            var baseUrl = _config["AppSettings:BaseUrl"] ?? "http://localhost:5029";
+            var baseUrl = GetBaseUrl();
 
             var query = _dbContext.Links
                 .AsNoTracking()
@@ -147,14 +147,19 @@ namespace UrlShortener.Api.Controllers
             return Redirect(link.OriginalUrl);
         }
 
-        private static string? HashIp(string? ip)
+        private string? HashIp(string? ip)
         {
             if (string.IsNullOrEmpty(ip))
                 return null;
 
-            using var sha = System.Security.Cryptography.SHA256.Create();
+            var key = _config["AppSettings:IpHashKey"];
+            if (string.IsNullOrEmpty(key))
+                throw new InvalidOperationException("AppSettings:IpHashKey is not configured.");
+
+            using var hmac = new System.Security.Cryptography.HMACSHA256(
+                System.Text.Encoding.UTF8.GetBytes(key));
             var bytes = System.Text.Encoding.UTF8.GetBytes(ip);
-            var hash = sha.ComputeHash(bytes);
+            var hash = hmac.ComputeHash(bytes);
             return Convert.ToHexString(hash);
         }
 
@@ -185,6 +190,13 @@ namespace UrlShortener.Api.Controllers
                 throw new UnauthorizedAccessException("User identity not found in token.");
 
             return Guid.Parse(sub);
+        }
+
+        private string GetBaseUrl()
+        {
+            return _config["AppSettings:BaseUrl"]
+                ?? throw new InvalidOperationException(
+                    "AppSettings:BaseUrl is not configured.");
         }
     }
 }
