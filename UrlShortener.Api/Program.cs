@@ -133,6 +133,8 @@ app.UseHttpsRedirection();
 
 // 3. Routing & CORS
 app.UseRouting();
+// Add a health check for Render
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.UseCors("FrontendPolicy");
 
 // 4. Auth & Rate Limiting
