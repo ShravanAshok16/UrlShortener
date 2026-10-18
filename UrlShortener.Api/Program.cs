@@ -151,7 +151,7 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 
 // 7. Redirect Endpoint (Minimal API)
-app.MapGet("/{code}", async (string code, AppDbContext db, HttpContext context, IpHasher ipHasher) =>
+app.MapGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}", async (string code, AppDbContext db, HttpContext context, IpHasher ipHasher) =>
 {
     var link = await db.Links.FirstOrDefaultAsync(l => l.ShortCode == code && l.IsActive);
 
