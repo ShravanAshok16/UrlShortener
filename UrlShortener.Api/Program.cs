@@ -115,44 +115,48 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// ==========================================
-// MIDDLEWARE PIPELINE (Order is critical!)
-// ==========================================
+// 1. Trust the proxy headers (CRITICAL for Render)
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+});
 
-// 1. Global Exception & Security Headers
+// 2. Global Exception & Security Headers
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 
-// 2. Logging & HTTPS
+// 3. Logging & HSTS (HSTS enforces HTTPS in the browser)
 app.UseSerilogRequestLogging();
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
 }
-app.UseHttpsRedirection();
 
-// 3. Routing & CORS
+// ⚠️ REMOVED: app.UseHttpsRedirection(); (Render handles this)
+
+// 4. Routing & CORS
 app.UseRouting();
-// Add a health check for Render
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.UseCors("FrontendPolicy");
 
-// 4. Auth & Rate Limiting
+// 5. Auth & Rate Limiting
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 
-// 5. Swagger (Dev only)
+// 6. Swagger (Dev only)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// 6. Map Endpoints
+// 7. Map Endpoints
 app.MapControllers();
 
-// 7. Redirect Endpoint (Minimal API)
+// Add a health check for Render
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+
+// 8. Redirect Endpoint (Minimal API)
 app.MapGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}", async (string code, AppDbContext db, HttpContext context, IpHasher ipHasher) =>
 {
     var link = await db.Links.FirstOrDefaultAsync(l => l.ShortCode == code && l.IsActive);
