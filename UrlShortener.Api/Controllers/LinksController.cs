@@ -135,36 +135,37 @@ namespace UrlShortener.Api.Controllers
         }
 
         [AllowAnonymous]
-[HttpGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}")]
-public async Task<IActionResult> RedirectToUrl(string code)
-{
-    var link = await _dbContext.Links
-        .FirstOrDefaultAsync(l => l.ShortCode.ToLower() == code.ToLower() && l.IsActive);
+        [HttpGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}")]
+        public async Task<IActionResult> RedirectToUrl(string code)
+        {
+            // Tell Cloudflare NOT to cache the 404 error
+            Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
 
-    if (link is null || (link.ExpiresAt.HasValue && link.ExpiresAt < DateTime.UtcNow))
-    {
-        // 🔥 Tell Cloudflare NOT to cache the 404 error
-        Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
-        return NotFound(new { message = $"Link '{code}' not found in database." });
-    }
+            var link = await _dbContext.Links
+                .FirstOrDefaultAsync(l => l.ShortCode.ToLower() == code.ToLower() && l.IsActive);
 
-    var click = new Click
-    {
-        LinkId = link.Id,
-        ClickedAt = DateTime.UtcNow,
-        UserAgent = Request.Headers.UserAgent.ToString(),
-        Referrer = Request.Headers.Referer.ToString(),
-        IpHash = HashIp(HttpContext.Connection.RemoteIpAddress?.ToString())
-    };
+            if (link is null || (link.ExpiresAt.HasValue && link.ExpiresAt < DateTime.UtcNow))
+            {
+                return NotFound(new { message = $"Link '{code}' not found in database." });
+            }
 
-    _dbContext.Clicks.Add(click);
-    await _dbContext.SaveChangesAsync();
+            var click = new Click
+            {
+                LinkId = link.Id,
+                ClickedAt = DateTime.UtcNow,
+                UserAgent = Request.Headers.UserAgent.ToString(),
+                Referrer = Request.Headers.Referer.ToString(),
+                IpHash = HashIp(HttpContext.Connection.RemoteIpAddress?.ToString())
+            };
 
-    // 🔥 Tell Cloudflare NOT to cache the 302 Redirect
-    Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
-    
-    return Redirect(link.OriginalUrl);
-}
+            _dbContext.Clicks.Add(click);
+            await _dbContext.SaveChangesAsync();
+
+            // Tell Cloudflare NOT to cache the 302 Redirect
+            Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
+            
+            return Redirect(link.OriginalUrl);
+        }
 
         private string? HashIp(string? ip)
         {
@@ -192,7 +193,7 @@ public async Task<IActionResult> RedirectToUrl(string code)
                 return NotFound();
 
             if (link.UserId != userId)
-                return NotFound();
+                return NotFound(); // 404, not 403 — don't leak existence
 
             link.IsActive = false;
             await _dbContext.SaveChangesAsync();
