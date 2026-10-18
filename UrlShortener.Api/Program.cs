@@ -92,7 +92,7 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins(
                 "http://localhost:5173",
-                "https://url-shortener-ui.vercel.app" // <-- Add your future Vercel URL here
+                "https://url-shortener-ui-flax.vercel.app" // <-- Your actual URL
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
