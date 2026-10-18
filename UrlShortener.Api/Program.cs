@@ -1,24 +1,26 @@
 using System.Text;
+using System.Threading.RateLimiting;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Serilog;
-using UrlShortener.Api.Services;
-using UrlShortener.Infrastructure.Data;
-using FluentValidation;
-using FluentValidation.AspNetCore;
-using UrlShortener.Api.Validators;
 using UrlShortener.Api.Middleware;
-using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.RateLimiting;
+using UrlShortener.Api.Services;
+using UrlShortener.Api.Validators;
+using UrlShortener.Core.Entities;
+using UrlShortener.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// 1. Custom Services
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<IpHasher>();
 
-// Add configuration for JWT
+// 2. Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -34,11 +36,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
         };
     });
+
+// 3. Rate Limiting
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // Global: 100 requests per minute per IP
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -50,7 +53,6 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    // Named policy for auth endpoints: 10 requests per minute per IP
     options.AddFixedWindowLimiter("auth", opt =>
     {
         opt.PermitLimit = 10;
@@ -58,33 +60,21 @@ builder.Services.AddRateLimiter(options =>
         opt.QueueLimit = 0;
     });
 });
+
 builder.Services.AddAuthorization();
 
-
-// Serilog
+// 4. Logging
 builder.Host.UseSerilog((ctx, cfg) =>
     cfg.ReadFrom.Configuration(ctx.Configuration).WriteTo.Console());
 
-// EF Core + Postgres
+// 5. Database
 if (!builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 }
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("FrontendPolicy", policy =>
-    {
-        policy
-            .WithOrigins(
-                "http://localhost:5173",     // Vite dev server
-                "https://url-shortener-ui.vercel.app"  // placeholder for Day 14
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
-    });
-});
+
+// 6. CORS (Only define it once, with both URLs)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
@@ -92,14 +82,15 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins(
                 "http://localhost:5173",
-                "https://url-shortener-ui-flax.vercel.app" // <-- Your actual URL
+                "https://url-shortener-ui-flax.vercel.app"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
     });
 });
-// Controllers + Swagger
+
+// 7. API Docs & Validation
 builder.Services.AddControllers();
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateLinkRequestValidator>();
@@ -124,30 +115,65 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// Add the exception handling middleware at the top of the pipeline
-app.UseMiddleware<ExceptionHandlingMiddleware>(); 
+// ==========================================
+// MIDDLEWARE PIPELINE (Order is critical!)
+// ==========================================
 
-// CORS — for the frontend (Day 11+)
-app.UseCors("FrontendPolicy");
-
-app.UseAuthentication();  // MUST come before UseAuthorization
-app.UseAuthorization();
-app.UseRateLimiter();
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-app.UseMiddleware<SecurityHeadersMiddleware>();
+// 1. Global Exception & Security Headers
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+// 2. Logging & HTTPS
 app.UseSerilogRequestLogging();
-// HTTPS redirect only outside Development (Render provides HTTPS at proxy)
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
 }
 app.UseHttpsRedirection();
+
+// 3. Routing & CORS
+app.UseRouting();
+app.UseCors("FrontendPolicy");
+
+// 4. Auth & Rate Limiting
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+
+// 5. Swagger (Dev only)
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// 6. Map Endpoints
 app.MapControllers();
+
+// 7. Redirect Endpoint (Minimal API)
+app.MapGet("/{code}", async (string code, AppDbContext db, HttpContext context, IpHasher ipHasher) =>
+{
+    var link = await db.Links.FirstOrDefaultAsync(l => l.ShortCode == code && l.IsActive);
+
+    if (link is null || (link.ExpiresAt.HasValue && link.ExpiresAt < DateTime.UtcNow))
+    {
+        return Results.NotFound();
+    }
+
+    var click = new Click
+    {
+        LinkId = link.Id,
+        ClickedAt = DateTime.UtcNow,
+        UserAgent = context.Request.Headers.UserAgent.ToString(),
+        Referrer = context.Request.Headers.Referer.ToString(),
+        IpHash = ipHasher.Hash(context.Connection.RemoteIpAddress?.ToString())
+    };
+
+    db.Clicks.Add(click);
+    await db.SaveChangesAsync();
+
+    return Results.Redirect(link.OriginalUrl);
+});
 
 app.Run();
 

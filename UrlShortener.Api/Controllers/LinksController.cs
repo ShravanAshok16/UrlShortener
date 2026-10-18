@@ -141,34 +141,6 @@ namespace UrlShortener.Api.Controllers
             });
         }
 
-        [AllowAnonymous]
-        [HttpGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}")]        
-        public async Task<IActionResult> RedirectToUrl(string code)
-        {
-            var link = await _dbContext.Links
-                .FirstOrDefaultAsync(l => l.ShortCode == code && l.IsActive);
-
-            if (link is null)
-                return NotFound();
-
-            if (link.ExpiresAt.HasValue && link.ExpiresAt < DateTime.UtcNow)
-                return NotFound();
-
-            var click = new Click
-            {
-                LinkId = link.Id,
-                ClickedAt = DateTime.UtcNow,
-                UserAgent = Request.Headers.UserAgent.ToString(),
-                Referrer = Request.Headers.Referer.ToString(),
-                IpHash = HashIp(HttpContext.Connection.RemoteIpAddress?.ToString())
-            };
-
-            _dbContext.Clicks.Add(click);
-            await _dbContext.SaveChangesAsync();
-
-            return Redirect(link.OriginalUrl);
-        }
-
         private string? HashIp(string? ip)
         {
             if (string.IsNullOrEmpty(ip))
