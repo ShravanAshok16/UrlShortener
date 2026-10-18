@@ -31,6 +31,8 @@ namespace UrlShortener.Infrastructure.Data;
                 e.HasIndex(l => l.UserId);
                 e.Property(l => l.OriginalUrl).IsRequired().HasMaxLength(2048);
                 e.Property(l => l.ShortCode).HasMaxLength(16).IsRequired();
+                e.HasIndex(x => new { x.UserId, x.OriginalUrl });
+                
 
                 e.HasOne(l => l.User)
                     .WithMany(u => u.Links)

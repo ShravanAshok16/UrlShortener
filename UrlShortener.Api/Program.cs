@@ -85,6 +85,20 @@ builder.Services.AddCors(options =>
             .AllowCredentials();
     });
 });
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        policy
+            .WithOrigins(
+                "http://localhost:5173",
+                "https://url-shortener-ui.vercel.app" // <-- Add your future Vercel URL here
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 // Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddFluentValidationAutoValidation();

@@ -87,6 +87,8 @@ namespace UrlShortener.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("UserId", "OriginalUrl");
+
                     b.ToTable("Links");
                 });
 

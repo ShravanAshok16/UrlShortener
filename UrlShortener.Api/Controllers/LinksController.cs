@@ -23,15 +23,36 @@ namespace UrlShortener.Api.Controllers
         }
 
         [HttpPost]
-        [HttpPost]
         public async Task<ActionResult<CreateLinkResponse>> CreateLink([FromBody] CreateLinkRequest request)
         {
             var userId = GetCurrentUserId();
             var baseUrl = GetBaseUrl();
 
+            // 1. Check for existing link
+            var existingLink = await _dbContext.Links
+                .FirstOrDefaultAsync(l =>
+                    l.UserId == userId &&
+                    l.OriginalUrl == request.OriginalUrl &&
+                    l.IsActive);
+
+            // 2. Return existing if found
+            if (existingLink is not null)
+            {
+                return Ok(new CreateLinkResponse
+                {
+                    Id = existingLink.Id,
+                    OriginalUrl = existingLink.OriginalUrl,
+                    ShortCode = existingLink.ShortCode,
+                    ShortUrl = $"{baseUrl}/{existingLink.ShortCode}",
+                    CreatedAt = existingLink.CreatedAt,
+                    ExpiresAt = existingLink.ExpiresAt
+                });
+            }
+
+            // 3. Otherwise create new
             var link = new Link
             {
-                UserId = userId,                                        // <-- owner
+                UserId = userId,
                 OriginalUrl = request.OriginalUrl,
                 ShortCode = ShortCodeGenerator.Generate(),
                 CreatedAt = DateTime.UtcNow,
@@ -42,6 +63,7 @@ namespace UrlShortener.Api.Controllers
             _dbContext.Links.Add(link);
             await _dbContext.SaveChangesAsync();
 
+            // 4. Return newly created
             return CreatedAtAction(nameof(CreateLink), new CreateLinkResponse
             {
                 Id = link.Id,
