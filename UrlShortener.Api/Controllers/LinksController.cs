@@ -10,7 +10,7 @@ namespace UrlShortener.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]                    // <-- every endpoint requires a token by default
+    [Authorize]
     public class LinksController : ControllerBase
     {
         private readonly AppDbContext _dbContext;
@@ -28,14 +28,12 @@ namespace UrlShortener.Api.Controllers
             var userId = GetCurrentUserId();
             var baseUrl = GetBaseUrl();
 
-            // 1. Check for existing link
             var existingLink = await _dbContext.Links
                 .FirstOrDefaultAsync(l =>
                     l.UserId == userId &&
                     l.OriginalUrl == request.OriginalUrl &&
                     l.IsActive);
 
-            // 2. Return existing if found
             if (existingLink is not null)
             {
                 return Ok(new CreateLinkResponse
@@ -49,7 +47,6 @@ namespace UrlShortener.Api.Controllers
                 });
             }
 
-            // 3. Otherwise create new
             var link = new Link
             {
                 UserId = userId,
@@ -63,7 +60,6 @@ namespace UrlShortener.Api.Controllers
             _dbContext.Links.Add(link);
             await _dbContext.SaveChangesAsync();
 
-            // 4. Return newly created
             return CreatedAtAction(nameof(CreateLink), new CreateLinkResponse
             {
                 Id = link.Id,
@@ -93,18 +89,15 @@ namespace UrlShortener.Api.Controllers
                 .AsNoTracking()
                 .Where(l => l.UserId == userId);
 
-            // Filter: active status
             if (isActive.HasValue)
                 query = query.Where(l => l.IsActive == isActive.Value);
 
-            // Filter: search in original URL
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var term = search.Trim().ToLower();
                 query = query.Where(l => l.OriginalUrl.ToLower().Contains(term));
             }
 
-            // Sort
             query = sort switch
             {
                 "created_asc" => query.OrderBy(l => l.CreatedAt),
@@ -141,6 +134,33 @@ namespace UrlShortener.Api.Controllers
             });
         }
 
+        [AllowAnonymous]
+        [HttpGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}")]
+        public async Task<IActionResult> RedirectToUrl(string code)
+        {
+            var link = await _dbContext.Links
+                .FirstOrDefaultAsync(l => l.ShortCode.ToLower() == code.ToLower() && l.IsActive);
+
+            if (link is null || (link.ExpiresAt.HasValue && link.ExpiresAt < DateTime.UtcNow))
+            {
+                return NotFound(new { message = $"Link '{code}' not found in database." });
+            }
+
+            var click = new Click
+            {
+                LinkId = link.Id,
+                ClickedAt = DateTime.UtcNow,
+                UserAgent = Request.Headers.UserAgent.ToString(),
+                Referrer = Request.Headers.Referer.ToString(),
+                IpHash = HashIp(HttpContext.Connection.RemoteIpAddress?.ToString())
+            };
+
+            _dbContext.Clicks.Add(click);
+            await _dbContext.SaveChangesAsync();
+
+            return Redirect(link.OriginalUrl);
+        }
+
         private string? HashIp(string? ip)
         {
             if (string.IsNullOrEmpty(ip))
@@ -167,7 +187,7 @@ namespace UrlShortener.Api.Controllers
                 return NotFound();
 
             if (link.UserId != userId)
-                return NotFound();                            // 404, not 403 — don't leak existence
+                return NotFound();
 
             link.IsActive = false;
             await _dbContext.SaveChangesAsync();
