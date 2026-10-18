@@ -159,11 +159,14 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 // 8. Redirect Endpoint (Minimal API)
 app.MapGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}", async (string code, AppDbContext db, HttpContext context, IpHasher ipHasher) =>
 {
-    var link = await db.Links.FirstOrDefaultAsync(l => l.ShortCode == code && l.IsActive);
+    // Force case-insensitive match just in case
+    var link = await db.Links
+        .FirstOrDefaultAsync(l => l.ShortCode.ToLower() == code.ToLower() && l.IsActive);
 
     if (link is null || (link.ExpiresAt.HasValue && link.ExpiresAt < DateTime.UtcNow))
     {
-        return Results.NotFound();
+        // Return a custom 404 so we know it hit THIS code block
+        return Results.NotFound(new { message = $"Link '{code}' not found in production database." });
     }
 
     var click = new Click
