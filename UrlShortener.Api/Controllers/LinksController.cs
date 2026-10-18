@@ -142,7 +142,7 @@ namespace UrlShortener.Api.Controllers
         }
 
         [AllowAnonymous]
-        [HttpGet("/{code}")]
+        [HttpGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}")]        
         public async Task<IActionResult> RedirectToUrl(string code)
         {
             var link = await _dbContext.Links
