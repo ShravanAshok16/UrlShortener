@@ -138,6 +138,9 @@ namespace UrlShortener.Api.Controllers
         [HttpGet("/{code:regex(^[[a-zA-Z0-9]]{{7}}$)}")]
         public async Task<IActionResult> RedirectToUrl(string code)
         {
+            // Tell Cloudflare NOT to cache the 404 error
+            Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
+
             var link = await _dbContext.Links
                 .FirstOrDefaultAsync(l => l.ShortCode.ToLower() == code.ToLower() && l.IsActive);
 
@@ -158,6 +161,9 @@ namespace UrlShortener.Api.Controllers
             _dbContext.Clicks.Add(click);
             await _dbContext.SaveChangesAsync();
 
+            // Tell Cloudflare NOT to cache the 302 Redirect
+            Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate");
+            
             return Redirect(link.OriginalUrl);
         }
 
@@ -187,7 +193,7 @@ namespace UrlShortener.Api.Controllers
                 return NotFound();
 
             if (link.UserId != userId)
-                return NotFound();
+                return NotFound(); // 404, not 403 — don't leak existence
 
             link.IsActive = false;
             await _dbContext.SaveChangesAsync();
